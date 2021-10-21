@@ -1,0 +1,30 @@
+{
+  "name": "shoppinglistsserver",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "apn": "^2.2.0",
+    "aws-sdk": "^2.1003.0",
+    "bcrypt": "^5.0.1",
+    "cors": "^2.8.5",
+    "crypto-random-string": "^4.0.0",
+    "dotenv": "^10.0.0",
+    "express": "*",
+    "fs": "^0.0.1-security",
+    "https": "^1.0.0",
+    "mongodb": "*",
+    "multer": "^1.4.3",
+    "nodemailer": "^6.6.5",
+    "nodemailer-smtp-transport": "^2.7.4",
+    "path": "^0.12.7",
+    "socket.io": "*",
+    "uuid": "^8.3.2",
+    "xoauth2": "^1.2.0"
+  }
+}
