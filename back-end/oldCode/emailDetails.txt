@@ -1,2 +1,0 @@
-email: lists.app1234@outlook.com
-password: Montero17$
