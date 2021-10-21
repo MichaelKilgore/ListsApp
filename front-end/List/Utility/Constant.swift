@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-var hostURL: String = ""//"ws://76.121.141.32:6311"
+var hostURL: String = ""
 
 // SAMPLE
 
