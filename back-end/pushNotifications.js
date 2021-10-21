@@ -3,9 +3,9 @@ const { POST, MSG } = require('./ENUM')
 var apn = require('apn');
 var options = {
   token: {
-    key: "AuthKey_92STV2HA6D.p8",
-    keyId: "92STV2HA6D",
-    teamId: "QBFL489WJL"
+    key: "",
+    keyId: "",
+    teamId: ""
   },
   production: false
 };
