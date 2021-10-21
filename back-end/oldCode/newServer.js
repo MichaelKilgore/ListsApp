@@ -78,9 +78,9 @@ var apn = require('apn');
 
 var options = {
   token: {
-    key: "AuthKey_92STV2HA6D.p8",
-    keyId: "92STV2HA6D",
-    teamId: "QBFL489WJL"
+    key: "",
+    keyId: "",
+    teamId: ""
   },
   production: false
 };
@@ -93,8 +93,8 @@ var nodemailer = require("nodemailer");
 var smtpTransport = nodemailer.createTransport({
     service: "hotmail",
     auth: {
-        user: "lists.app1234@outlook.com",
-        pass: "Montero17$"
+        user: "",
+        pass: ""
     }
 });
 
