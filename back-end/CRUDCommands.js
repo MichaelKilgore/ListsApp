@@ -104,7 +104,7 @@ async function createNewUser(db, email, username, password, verificationCode) {
 		password: hashedPassword,
 		deviceToken: "",
 		invites: [],
-		active: false,
+		active: true, //FIX: temporarily set to true
 		verificationCode: verificationCode,
 		changePasswordCode: ""
 	}
@@ -205,8 +205,8 @@ async function credentialCheck(db, email, password) {
 }
 exports.credentialCheck = credentialCheck
 
-async function createNewList(db, email, listName) {
-	listID = uuid.v1();
+async function createNewList(db, email, listName, listID) {
+	
 	const data = {
 		_id: listID,
 		host: email,
@@ -217,7 +217,9 @@ async function createNewList(db, email, listName) {
 	//wait for list to insert first, and then if it fails then don't enter into the next thing.
 	const resp = await Lists.insertOne(data)
 					.then(response => POST.SUCCESS)
-					.catch(err => POST.SERVER_ERROR)
+					.catch(err => {
+						return POST.SERVER_ERROR
+					})
 	if (resp == POST.SUCCESS) {
 		const data2 = {
 			email: email,
@@ -226,7 +228,9 @@ async function createNewList(db, email, listName) {
 		const usersLists = db.collection('Users_Lists');
 		const resp2 = await usersLists.insertOne(data2)
 						.then(response => POST.SUCCESS)	
-						.catch(err => POST.SERVER_ERROR)
+						.catch(err => {
+							return POST.SERVER_ERROR
+						})
 		return {'listID': listID, 'resp': resp2}
 	} else {
 		return {'listID': listID, 'resp': resp}
@@ -278,11 +282,20 @@ exports.removeUserFromList = removeUserFromList
 async function getList(db, listID) {
 	const Lists = db.collection('Lists');	
 	const x = Lists.findOne({ _id: listID })
-				.then(result => result.body)
+				.then(result => result)
 				.catch(err => POST.SERVER_ERROR)
 	return x
 }
 exports.getList = getList
+
+async function getListBody(db, listID) {
+    const Lists = db.collection('Lists');
+    const x = Lists.findOne({ _id: listID })
+                .then(result => result.body)
+                .catch(err => POST.SERVER_ERROR)
+    return x
+}
+exports.getListBody = getListBody
 
 async function deleteList(db, listID) {
 	const Lists = db.collection('Lists');
@@ -376,9 +389,10 @@ async function addUserToList(db, email, listID) {
 		listID: listID
 	}
 	const usersLists = db.collection('Users_Lists');
-	usersLists.insertOne(data)
+	var x = usersLists.insertOne(data)
 			.then(response => POST.SUCCESS)
 			.catch(err => POST.SERVER_ERROR)
+	return x
 }
 exports.addUserToList = addUserToList
 
@@ -401,9 +415,11 @@ async function getBodyItem(db, listID, bodyID) {
 						.then(result => result.body)
 						.catch(err => POST.SERVER_ERROR)
 
-	for (const bodyItem in x) {
+	for (const bodyItem of x) {
 		if (bodyItem.id == bodyID) {
+			console.log(bodyItem);
 			return bodyItem
+			break
 		}
 	}
 }
@@ -419,6 +435,35 @@ async function setDeviceToken(db, email, deviceToken) {
     .catch(err => POST.SERVER_ERROR)
 }
 exports.setDeviceToken = setDeviceToken
+
+async function getListInfo(db, listID) {
+	const Lists = db.collection('Lists');
+	const usersLists = db.collection('Users_Lists');
+	const Users = db.collection('Users');
+	const x = await Lists.findOne({ _id: listID })
+                        .then(result => result)
+                        .catch(err => POST.SERVER_ERROR)
+	
+	const users = await usersLists.find({ listID: listID }).toArray();
+	var userPromises = [];
+
+	for (const user of users) {
+		userPromises.push(Users.findOne({ _id: user.email }))
+	}
+
+	const finalListOfUsers = [];
+
+	userPromises = await Promise.all(userPromises).then(result => result).catch(err => err)
+
+	for (const user of userPromises) {
+		finalListOfUsers.push({'email': user._id, 'username': user.username})
+	}		
+
+	x['users'] = finalListOfUsers
+
+	return x
+}
+exports.getListInfo = getListInfo
 
 
 

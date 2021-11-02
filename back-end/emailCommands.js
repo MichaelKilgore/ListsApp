@@ -26,8 +26,15 @@ async function newAccountMail(hostIP, email, verificationCode) {
        	subject : "Please confirm your Email account",
      	html : "Hello,<br> Please Click on the link to verify your email.<br><a href="+link+">Click here to verify</a>"
  	}
-   	const x = await smtpTransport.sendMail(mailOptions).then(result => POST.SUCCESS).catch(err => { POST.SERVER_ERROR })
-	return x
+	var resp = 0;
+	await smtpTransport.sendMail(mailOptions, function(err, info) {
+        if (err) {
+            resp = POST.SERVER_ERROR
+        } else {
+            resp = POST.SUCCESS
+        }
+    })
+	return resp
 }
 exports.newAccountMail = newAccountMail
 
@@ -39,8 +46,15 @@ async function changePasswordMail(hostIP, randomCode, email) {
        	subject: "Password Change Requested",
        	html: "Hello,<br> Please Click on the link to change your password.<br><a href="+link+">Click here to change</a>"
  	}
- 	const resp = await smtpTransport.sendMail(mailOptions).then(result => POST.SUCCESS).catch(err => POST.SERVER_ERROR)
-	return resp
+	var resp = 0;
+    await smtpTransport.sendMail(mailOptions, function(err, info) {
+        if (err) {
+            resp = POST.SERVER_ERROR
+        } else {
+            resp = POST.SUCCESS
+        }
+    })
+    return resp
 }
 exports.changePasswordMail = changePasswordMail
 

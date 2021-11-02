@@ -55,7 +55,7 @@ async function inviteUserToListPushkit(deviceToken, email, listID, listName) {
 }
 exports.inviteUserToListPushkit = inviteUserToListPushkit
 
-async function userAcceptsInvitePushkit(deviceToken, email, listName, listID) {
+async function userAcceptsInvitePushkit(deviceToken, email, username, listID, listName) {
 	var note = new apn.Notification();
 
 	note.expiry = Math.floor(Date.now() / 1000) + 3600;	
@@ -70,8 +70,10 @@ async function userAcceptsInvitePushkit(deviceToken, email, listName, listID) {
 		},
 		'msg': MSG.USER_JOINS_LIST,
 		'email': email,
+		'username': username,
 		'listID': listID	
 	}
+	console.log(note.payload);
 	var x = apnProvider.send(note, deviceToken)
 				.then(response => response)
 				.catch(err => err)
@@ -107,7 +109,7 @@ async function userDeletesListPushkit(deviceToken, username, listID, listName, h
 }
 exports.userDeletesListPushkit = userDeletesListPushkit
 
-async function addListItemPushkit(deviceToken, username, listID, listName, bodyObject) {
+async function addListItemPushkit(deviceToken, listID, listName, bodyObject) {
 	var note = new apn.Notification();
 	console.log(bodyObject);
 
@@ -116,7 +118,7 @@ async function addListItemPushkit(deviceToken, username, listID, listName, bodyO
     note.sound = "ping.aiff";
     note.topic = "Michael.List";
 
-    note.alert = username + " added " + bodyObject.text + " to " + listName + "."
+    note.alert = bodyObject.user.username + " added " + bodyObject.text + " to " + listName + "."
     note.payload = {
         "aps": {
             "content-available":1
@@ -125,6 +127,9 @@ async function addListItemPushkit(deviceToken, username, listID, listName, bodyO
         'listID': listID,
         'body': bodyObject
     }
+	console.log("here");
+	console.log(deviceToken);
+	console.log(bodyObject);
     var x = apnProvider.send(note, deviceToken)
                 .then(response => response)
                 .catch(err => err)

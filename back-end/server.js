@@ -6,7 +6,7 @@ const uri = 'mongodb://127.0.0.1:27017';
 const client = new MongoClient(uri);
 await client.connect();
 const db = client.db('ShoppingLists');
-const { login, createNewUser, findUser, activateUser, setPasswordChangeCode, changePassword, changeUsername, credentialCheck, createNewList, getUsersInList, getListHost, changeListHost, removeUserFromList, getList, deleteList, insertListItem, clearDeviceToken, deleteListItem, inviteUser, removeInviteRequest, addUserToList, updateItem, getBodyItem, setDeviceToken } = require('./CRUDCommands')
+const { login, createNewUser, findUser, activateUser, setPasswordChangeCode, changePassword, changeUsername, credentialCheck, createNewList, getUsersInList, getListHost, changeListHost, removeUserFromList, getList, deleteList, insertListItem, clearDeviceToken, deleteListItem, inviteUser, removeInviteRequest, addUserToList, updateItem, getBodyItem, setDeviceToken, getListInfo, getListBody } = require('./CRUDCommands')
 
 ///////////////SERVER////////////////////
 crypto = require('crypto');
@@ -99,11 +99,15 @@ app.get('/verify', async function(req,res) {
 
 	if (resp[0] == POST.SUCCESS) {
 		if (req.query.id == resp[1].verificationCode) {
-			res.send("<h1>Email "+req.query.email+" has been Successfully verified")
-			const resp = activateUser(db, req.query.email)
-			/*if (resp != POST.SUCCESS) {
-				console.log("Server error occurred when verifying user.")
-			}*/
+			res.send("<h1>Email "+req.query.email+" has been Successfully verified.")
+			var resp2 = activateUser(db, req.query.email)
+			var waitTime = 1000;
+			while (resp2 != POST.SUCCESS) {
+				const delay = waitTime => new Promise(resolve => setTimeout(resolve, waitTime))
+				resp2 = await activateUser(db, req.query.email);	
+				await delay(waitTime)
+				waitTime = waitTime * 2;
+			}
 		} else {
 			res.send("<h3>Code given was incorrect</h3>")
 		}
@@ -150,7 +154,7 @@ app.post('/changePassword', async function(req, res) {
 			if (resp == POST.SUCCESS) {
 				res.end("<h1>Password has been successfully reset.</h1>")
 			} else {
-				res.end("<h1>Bad Request</h1>")
+				res.end("<h1>Failure occurred, try reloading the page.</h1>")
 			}
 		} else {
 			res.end("<h1>Bad Request</h1>")
@@ -165,70 +169,116 @@ app.post('/changePassword', async function(req, res) {
 app.post('/changeUsername', async function(req, res) {
 	const isValid = await credentialCheck(db, req.body.email, req.body.password);
 	if (isValid == POST.SUCCESS) {
-		const succ = await changeUsername(db, req.body.email, req.body.username)				
-		res.end({ 'response': succ })
+		var succ = await changeUsername(db, req.body.email, req.body.username)				
+		
+		res.send({ 'response': POST.SUCCESS })
+
+        var waitTime = 1000;
+		while (succ != POST.SUCCESS) {
+         	const delay = waitTime => new Promise(resolve => setTimeout(resolve, waitTime))
+           	succ = await changeUsername(db, req.body.email, req.body.username)
+          	await delay(waitTime)
+                waitTime = waitTime * 2;
+    	}
+
 	} else {
-		res.end({ 'response': isValid })
+		res.send({ 'response': isValid })
 	}
 })
 
 //////////CREATE NEW LIST//////////
 //User creates a new list
 app.post('/createNewList', async function(req, res) {
-	const isValid = await credentialCheck(db, req.body.email, req.body.password)
-	if (isValid == POST.SUCCESS) {
-		const succ = await createNewList(db, req.body.email, req.body.listName)
-		res.send(succ);
-	} else {
-		res.end({ 'listID': '', 'resp': isValid })
-	}
+
+			const isValid = await credentialCheck(db, req.body.email, req.body.password)
+			if (isValid == POST.SUCCESS) {
+				const listID = uuid.v1();
+				res.send({'listID': listID, 'resp': POST.SUCCESS})
+				var succ = await createNewList(db, req.body.email, req.body.listName, listID);
+
+				var waitTime = 1000;
+				while (succ['resp'] != POST.SUCCESS) {
+					const delay = waitTime => new Promise(resolve => setTimeout(resolve, waitTime))
+					succ = await createNewList(db, req.body.email, req.body.listName, listID)
+					if (succ['resp'] == POST.SUCCESS) {
+						break;
+					}
+					await delay(waitTime)
+					waitTime = waitTime * 2;
+				}
+			} else if (isValid == POST.SERVER_ERROR) { //TODO: Should just retry.
+				res.end({ 'listID': '', 'resp': isValid })			
+			} else {
+				res.end({ 'listID': '', 'resp': isValid })
+			}
+			
 })
 
 /////////DELETE LIST//////////
 //User deletes a list. If that user is the last person in the list then the list gets deleted,
 //otherwise the host is changed, and the user is removed from the list
 app.post('/deleteList', async function(req, res) {
-	const isValid = await credentialCheck(db, req.body.email, req.body.password)		
+
+	const isValid = await credentialCheck(db, req.body.email, req.body.password)
 	if (isValid == POST.SUCCESS) {
-		const users = await getUsersInList(db, req.body.listID);				
-		if (users.length != 1) {
-			const host = await getListHost(db, listID);
-			firstUser = true
-			nextHost = ""
-			for (const user of users) {
-				if (host == req.body.email && firstUser == true) {
-					if (host != user) {
-						firstUser = false
-						nextHost = user
-						const res = changeListHost(db, newHost, listID) //TODO: no fallback for if this fails.
+
+		var session = client.startSession();
+
+    	try {
+
+        	const transactionResult = await session.withTransaction(async () => {
+
+				const users = await getUsersInList(db, req.body.listID); //TODO: NO failure check
+				//CASE 1 -> remove user from list, I don't need to prioritize telling users that a user left a list.
+				if (users.length != 1) {
+					const host = await getListHost(db, listID);
+					firstUser = true
+					nextHost = ""
+					for (const user of users) {
+						if (host == req.body.email && firstUser == true) {
+							if (host != user) {
+								firstUser = false
+								nextHost = user
+								const res = changeListHost(db, newHost, listID) //TODO: no fallback for if this fails.
+							}
+						}
 					}
-				}
-			}
-		
-			for (const user of users) {
-				if (user /*!=*/== req.body.email) {
-					const userInfo = await findUser(db, user)	
-					userDeletesListPushkit(userInfo[1].deviceToken, userInfo[1].username, req.body.listID, "", nextHost, req.body.email)
-				}
-			}
-			res.send({ 'response': POST.SUCCESS })
-			const succ = await removeUserFromList(db, req.body.listID, req.body.email)
 				
-		} else {
-			const list = await getList(db, req.body.listID) //TODO: does this succeed
-			if (list != POST.SERVER_ERROR) {
-				for (const item of list) {
-					if (item.containsImage == true) {
-						deleteFile(item.id); //TODO: does this succeed?
-					}	
+					for (const user of users) {
+						if (user != req.body.email) {
+							const userInfo = await findUser(db, user)	
+							userDeletesListPushkit(userInfo[1].deviceToken, userInfo[1].username, req.body.listID, "", nextHost, req.body.email)
+						}
+					}
+					res.send({ 'response': POST.SUCCESS })
+					const succ = await removeUserFromList(db, req.body.listID, req.body.email)
+						
+				//CASE 2 -> do in transaction
+				} else if (users.length == 1) {
+					const list = await getListBody(db, req.body.listID) //TODO: does this succeed
+					if (list != POST.SERVER_ERROR) {
+						for (const item of list) {
+							if (item.containsImage == true) {
+								deleteFile(item.id); //TODO: does this succeed?
+							}	
+						}
+					
+						deleteList(db, req.body.listID) //TODO: does this need to succeed?
+						res.send({'response': POST.SUCCESS });
+					} else {
+						res.send({ 'response': POST.SERVER_ERROR });
+					}
+				} else {
+					res.send({ 'response': POST.SERVER_ERROR });
 				}
-			
-				deleteList(db, req.body.listID) //TODO: does this need to succeed?
-				res.send({'response': POST.SUCCESS });
-			} else {
-				res.send({ 'response': POST.SERVER_ERROR });
-			}
+			})
+		} catch(e) {
+
+		} finally {
+
 		}
+		
+
 	} else {
      	res.send({ 'response': POST.SERVER_ERROR });
 	}
@@ -258,7 +308,18 @@ app.post('/addListItemWithImage', type, async function(req, res) {
 		//unlinkFile(file.path);
 		const path = itemID;
 	
-		const x = await insertListItem(db, itemID, req.body.listID, req.body.text, req.body.email, req.body.username, req.body.hyperLink, true)
+		var x = await insertListItem(db, itemID, req.body.listID, req.body.text, req.body.email, req.body.username, req.body.hyperLink, true)
+
+		var waitTime = 1000;
+        while (x != POST.SUCCESS) {
+            const delay = waitTime => new Promise(resolve => setTimeout(resolve, waitTime))
+        	x = await insertListItem(db, itemID, req.body.listID, req.body.text, req.body.email, req.body.username, req.body.hyperLink, true)
+            await delay(waitTime)
+                waitTime = waitTime * 2;
+        }
+		if (x == POST.SUCCESS) {
+            res.send({ 'path': "adf", 'id': itemID })
+        }
 
 		const body = {
 			'id': itemID,
@@ -273,19 +334,14 @@ app.post('/addListItemWithImage', type, async function(req, res) {
 
 		const users = await getUsersInList(db, req.body.listID)
 		for (const user of users) {
-			if (user /*!=*/== req.body.email) {
+			if (user != req.body.email) {
 				var userInfo = findUser(db, user)
 				var listInfo = getList(db, req.body.listID)
-				[userInfo, listInfo] = await Promise.all([userInfo, listInfo]).then(result => result).catch(err => { return POST.SERVER_ERROR })
-				console.log(body);
-				const y = addListItemPushkit(userInfo[1].deviceToken, req.body.listID, listInfo.listName, body);
+				//[userInfo, listInfo] = await Promise.all([userInfo, listInfo]).then(result => result).catch(err => { return POST.SERVER_ERROR })
+				userInfo = await userInfo
+				listInfo = await listInfo
+				const y = addListItemPushkit(userInfo[1].deviceToken, req.body.listID, listInfo.shoppingListName, body);
 			}
-		}
-
-		if (x == POST.SUCCESS) {
-			res.send({ 'path': path, 'id': itemID })
-		} else {
-			res.send('fail');
 		}
 	} else {
 		res.send('fail');
@@ -298,7 +354,18 @@ app.post('/addListItem', async function(req, res) {
 	const isValid = await credentialCheck(db, req.body.email, req.body.password)
     if (isValid == POST.SUCCESS) {
 		itemID = uuid.v1();
-		const x = await insertListItem(db, itemID, req.body.listID, req.body.text, req.body.email, req.body.username, req.body.hyperLink, false)
+		var x = await insertListItem(db, itemID, req.body.listID, req.body.text, req.body.email, req.body.username, req.body.hyperLink, false)
+
+		var waitTime = 1000;
+        while (x != POST.SUCCESS) {
+            const delay = waitTime => new Promise(resolve => setTimeout(resolve, waitTime))
+            x = await insertListItem(db, itemID, req.body.listID, req.body.text, req.body.email, req.body.username, req.body.hyperLink, true)
+            await delay(waitTime)
+                waitTime = waitTime * 2;
+        }
+        if (x == POST.SUCCESS) {
+            res.send({ 'path': "", 'id': itemID })
+        }
 
 		const body = {
             'id': itemID,
@@ -313,19 +380,15 @@ app.post('/addListItem', async function(req, res) {
 
 		const users = await getUsersInList(db, req.body.listID)
         for (const user of users) {
-			if (user /*!=*/== req.body.email) {
+			if (user != req.body.email) {
             	var userInfo = findUser(db, user)
 				var listInfo = getList(db, req.body.listID)
-				[userInfo, listInfo] = await Promise.all([userInfo, listInfo]).then(result => result).catch(err => { return POST.SERVER_ERROR })
-            	const y = addListItemPushkit(userInfo[1].deviceToken, req.body.username, req.body.listID, listInfo.listName, body);
+				//[userInfo, listInfo] = await Promise.all([userInfo, listInfo]).then(result => result).catch(err => { return POST.SERVER_ERROR })
+				userInfo = await userInfo
+				listInfo = await listInfo
+            	const y = addListItemPushkit(userInfo[1].deviceToken, req.body.listID, listInfo.shoppingListName, body);
 			}
         }
-
-        if (x == POST.SUCCESS) {
-            res.send({ 'path': '', 'id': itemID })
-        } else {
-            res.send('fail');
-        }	
 	} else {
 		res.send('fail');
 	}
@@ -336,8 +399,20 @@ app.post('/addListItem', async function(req, res) {
 app.post('/clearDeviceToken', async function(req, res) {
 	const isValid = await credentialCheck(db, req.body.email, req.body.password)
     if (isValid == POST.SUCCESS) {
-		const ans = clearDeviceToken(db, req.body.email)
-		res.send({ 'response': ans })
+		res.send({ 'response': POST.SUCCESS })
+		var ans = clearDeviceToken(db, req.body.email)
+
+		var waitTime = 1000;
+        while (ans != POST.SUCCESS) {
+            const delay = waitTime => new Promise(resolve => setTimeout(resolve, waitTime))
+            ans = await clearDeviceToken(db, req.body.email)
+            await delay(waitTime)
+        	 waitTime = waitTime * 2;
+        }
+        if (ans == POST.SUCCESS) {
+        }
+
+
 	} else {
 		res.send({ 'response': isValid })
 	}
@@ -348,27 +423,25 @@ app.post('/clearDeviceToken', async function(req, res) {
 app.post('/deleteListItem', async function(req, res) {
 	const isValid = await credentialCheck(db, req.body.email, req.body.password)
     if (isValid == POST.SUCCESS) {
+		//TODO: Make delete List Item return the item so I don't find it first then delete it.
+		var bodyItem = getBodyItem(db, req.body.listID, req.body.bodyID) //TODO: There is no getbodyItem function
+		bodyItem = await bodyItem
 		const succ = await deleteListItem(db, req.body.email, req.body.listID, req.body.bodyID)
         const succ2 = deleteFile(req.body.bodyID); //TODO: this might cause a crash, cause im not checking to see if the file contains an image before deleting file. maybe send whether it contains image or not from the user.
 		if (succ == POST.SUCCESS) {
 			res.send({ 'response':succ })
 		}
 		
-		/*if (succ2 == POST.SUCCESS) {
-			console.log("Image deleted from s3 successfully.")
-		} else {
-			console.log("Failed to delete image from s3.")
-		}*/
-
-
 		const users = await getUsersInList(db, req.body.listID)
         for (const user of users) {
-			if (user /*!=*/== req.body.email) {
+			if (user != req.body.email) {
             	var userInfo = findUser(db, user)
 				var listInfo = getList(db, req.body.listID)
-				var bodyItem = getBodyItem(db, req.body.listID, req.body.bodyID) //TODO: There is no getbodyItem function
-				[userInfo, listInfo, bodyItem] = await Promise.all([userInfo, listInfo, bodyItem]).then(result => result).catch(err => { return POST.SERVER_ERROR })
-            	const y = deleteListItemPushkit(userInfo[1].deviceToken, req.body.listID, req.body.bodyID, bodyItem.text, listInfo.listName)
+				//[userInfo, listInfo] = await Promise.all([userInfo, listInfo]).then(result => result).catch(err => { return POST.SERVER_ERROR })
+				userInfo = await userInfo
+				listInfo = await listInfo
+				//console.log(listInfo);
+            	const y = deleteListItemPushkit(userInfo[1].deviceToken, req.body.listID, req.body.bodyID, bodyItem.text, listInfo.shoppingListName)
 			}
         }
 
@@ -383,14 +456,24 @@ app.post('/deleteListItem', async function(req, res) {
 app.post('/inviteUser', async function(req, res) {
 	const isValid = await credentialCheck(db, req.body.email, req.body.password)
     if (isValid == POST.SUCCESS) {
-		didWork = await inviteUser(db, req.body.email, req.body.listID, req.body.listName)
-		if (didWork == POST.SUCCESS) {
-			var userInfo = await findUser(db, req.body.invitedUser)
-			var x = inviteUserToListPushkit(userInfo[1].deviceToken, req.body.email, req.body.listID, req.body.listName)
+		var userInfo = await findUser(db, req.body.invitedUser)
 
-			res.send({ 'response':POST.SUCCESS })
-		} else {
-			res.send({'response':POST.SERVER_ERROR })
+		var alreadyInvited = true;
+      	for (const invite of userInfo[1].invites) {
+         	if (invite.listID == req.body.listID) {
+            	alreadyInvited = false
+               	break;
+           	}
+      	}
+
+		if (alreadyInvited) {
+			didWork = await inviteUser(db, req.body.invitedUser, req.body.listID, req.body.listName)
+			if (didWork == POST.SUCCESS) {
+				var x = inviteUserToListPushkit(userInfo[1].deviceToken, req.body.email, req.body.listID, req.body.listName)
+				res.send({ 'response':POST.SUCCESS })
+			} else {
+				res.send({'response':POST.SERVER_ERROR })
+			}
 		}
 	} else {
 		res.send( {'response': isValid })
@@ -406,21 +489,40 @@ app.post('/acceptInvite', async function(req, res) {
 		//removeInviteRequest
 		removeInviteRequest(db, req.body.email, req.body.listID)
 		//add user to list
-		const didWork = await addUserToList(db, req.body.email, req.body.listID)
 
 		const users = await getUsersInList(db, req.body.listID)
-        for (const user of users) {
-            if (user /*!=*/== req.body.email) {
+
+		var notAlreadyInList = true
+		//check if the user is already in the list
+		for (const user of users) {
+			if (user == req.body.email) {
+				notAlreadyInList = false	
+			}
+		}
+		
+		if (notAlreadyInList) {
+			const didWork = await addUserToList(db, req.body.email, req.body.listID)
+
+			const userJoining = await findUser(db, req.body.email);
+
+        	for (const user of users) {
                 var userInfo = findUser(db, user)
 				var listInfo = getList(db, req.body.listID)
-				[userInfo, listInfo] = await Promise.all([userInfo, listInfo]).then(result => result).catch(err => { return POST.SERVER_ERROR })	
-				const y = userAcceptsInvitePushkit(userInfo[1].deviceToken, req.body.email, listInfo.listName, req.body.listID)
-            }
-        }			
-	
-		res.send({ 'response': didWork })
+				//[userInfo, listInfo] = await Promise.all([userInfo, listInfo]).then(result => result).catch(err => { return POST.SERVER_ERROR })	
+				userInfo = await userInfo
+				listInfo = await listInfo
+				const y = userAcceptsInvitePushkit(userInfo[1].deviceToken, req.body.email, userJoining[1].username, req.body.listID, listInfo.shoppingListName)
+        	}			
+			//I NEED TO SEND A LIST TO THE USER.	
+
+			const listInfo2 = await getListInfo(db, req.body.listID)
+
+			res.send({ 'response': didWork, 'list': listInfo2 })
+		} else {
+			res.send({'response': POST.INVALID_REQUEST, 'list': {}})
+		}
 	} else {
-		res.send({ 'response': isValid })
+		res.send({ 'response': isValid, 'list': {}})
 	}
 })
 
@@ -454,16 +556,17 @@ app.post('/updateItem', async function(req, res) {
                 'username': userOfItem.username
             },
             'text': req.body.text,
-            'hyperLink': req.body.hyperLink,
             'containsImage': false
         }
 
 		const users = await getUsersInList(db, req.body.listID)
         for (const user of users) {
-            if (user /*!=*/== req.body.email) {
+            if (user != req.body.email) {
                 const userInfo = findUser(db, user)
                 const listInfo = getList(db, req.body.listID)
-                [userInfo, listInfo] = await Promise.all([userInfo[1], listInfo]).then(result => result).catch(err => { return POST.SERVER_ERROR })
+                //[userInfo, listInfo] = await Promise.all([userInfo[1], listInfo]).then(result => result).catch(err => { return POST.SERVER_ERROR })
+				userInfo = await userInfo
+				listInfo = await listInfo
                 const y = updateListItemPushkit(deviceToken, userInfo[1].username, req.body.listID, body)
             }
         }
@@ -504,10 +607,12 @@ app.post('/updateItemWithImage', type, async function(req, res) {
 
         	const users = await getUsersInList(db, req.body.listID)
         	for (const user of users) {
-            	if (user /*!=*/== req.body.email) {
+            	if (user != req.body.email) {
                 	var userInfo = findUser(db, user)
                 	var listInfo = getList(db, req.body.listID)
-                	[userInfo, listInfo] = await Promise.all([userInfo, listInfo]).then(result => result).catch(err => { return POST.SERVER_ERROR })
+                	//[userInfo, listInfo] = await Promise.all([userInfo, listInfo]).then(result => result).catch(err => { return POST.SERVER_ERROR })
+					userInfo = await userInfo
+					listInfo = await listInfo
                 	const y = updateListItemPushkit(deviceToken, userInfo[1].username, req.body.listID, body)
             	}
         	}
